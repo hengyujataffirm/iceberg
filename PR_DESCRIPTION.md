@@ -4,7 +4,7 @@
 Add INFO-level logging when an Iceberg snapshot/commit happens so that the **committed offsets** (Flink checkpoint IDs) and the resulting **snapshot ID** are recorded in the operator logs. This helps identify the source of data loss when it occurs by correlating Flink checkpoints with Iceberg table state.
 
 ## Motivation
-When data is **missing in Snowflake**, we need to know whether the loss happened in the **Flink job** (data never reached Iceberg) or in **CLD to Snowflake** (data is in Iceberg but not in Snowflake). To decide, we must know which Flink checkpoints were committed to Iceberg and which Iceberg snapshot each commit produced. Today that requires scanning table metadata (snapshot summaries for `flink.max-committed-checkpoint-id`). Logging it in the committer makes this investigation straightforward: we can read the last committed checkpoint and snapshot ID from logs, then query Iceberg at that snapshot to see if the missing data is there.
+There is a concern that a given offset might not be included in any checkpoint. Although that should not be possible under normal operation, we need a way to **audit** it: for each Iceberg snapshot, we want a clear record of **which offsets (checkpoint IDs) are attached to that snapshot**. This change prints all committed checkpoint IDs and the resulting snapshot ID in the committer logs on every commit, so operators can search logs to verify which checkpoints (and thus which data) are in each snapshot and debug whether a specific offset was ever committed.
 
 ## Data loss investigation: Flink vs CLD to Snowflake
 
