@@ -15,7 +15,7 @@ Today this is only recoverable by scanning table metadata (snapshot summaries fo
 When data is missing from the table, use these logs to decide whether the loss is in the **Flink job** (data never committed) or **downstream** (data was committed; loss is in a consumer, ETL, or reporting layer).
 
 1. **Get the last committed offset from Flink**  
-   Search committer logs for `Committed offsets (checkpointIds):` for the affected table/branch. The highest checkpoint ID in those lines is the last offset the Flink sink committed to Iceberg.
+   First identify which message is missing (e.g. the **event_id** that was dropped). In **Confluent UI**, find that exact message and note its **offset**. Then search Flink committer logs for `Committed offsets (checkpointIds):` for the affected table/branch; the highest checkpoint ID there is the last offset the Flink sink committed to Iceberg. You can compare the message’s Kafka offset to the committed checkpoint to see if the job had committed up to that point.
 
 2. **Get the snapshot that represents that commit**  
    Use the "Committed ... snapshotId: ..." lines to map that checkpoint ID to an Iceberg **snapshot ID**.
