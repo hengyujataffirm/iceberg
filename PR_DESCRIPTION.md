@@ -10,20 +10,20 @@ When data loss is suspected, we need to answer:
 
 Today this is only recoverable by scanning table metadata (snapshot summaries for `flink.max-committed-checkpoint-id`). Having the same information in the committer logs makes debugging and incident response faster.
 
-## Data loss investigation: Flink job vs downstream
+## Data loss investigation: Flink vs CLD to Snowflake
 
-When data is missing from the table, use these logs to decide whether the loss is in the **Flink job** (data never committed) or **downstream** (data was committed; loss is in a consumer, ETL, or reporting layer).
+When data is **missing in Snowflake**, use these logs to determine whether the loss happened in the **Flink job** (data never made it to Iceberg) or in the **CLD-to-Snowflake** pipeline (data reached Iceberg but was not loaded into Snowflake).
 
-1. **Get the last committed offset from Flink**  
-   First identify which message is missing (e.g. the **event_id** that was dropped). In **Confluent UI**, find that exact message and note its **offset**. Then search Flink committer logs for `Committed offsets (checkpointIds):` for the affected table/branch; the highest checkpoint ID there is the last offset the Flink sink committed to Iceberg. You can compare the message’s Kafka offset to the committed checkpoint to see if the job had committed up to that point.
+1. **Identify the missing record and its Kafka offset**  
+   Identify which record is missing in Snowflake (e.g. the **event_id**). In **Confluent UI**, find that message and note its **offset**.
 
-2. **Get the snapshot that represents that commit**  
-   Use the "Committed ... snapshotId: ..." lines to map that checkpoint ID to an Iceberg **snapshot ID**.
+2. **Get what Flink committed to Iceberg**  
+   Search Flink committer logs for `Committed offsets (checkpointIds):` for the affected table/branch; the highest checkpoint ID is the last offset the Flink sink committed. Use the "Committed ... snapshotId: ..." lines to get the **Iceberg snapshot ID** that corresponds to that commit.
 
-3. **Decide: Flink vs downstream**  
-   - **Query the table as of that snapshot** (e.g. `SELECT ... FROM table VERSION AS OF snapshot_id`). If the expected data **is present** there, the Flink job committed it correctly → **loss is downstream** (consumer/ETL/reporting).  
-   - If the expected data **is not present** in that snapshot, the Flink job never committed it → **loss is in the Flink job** (e.g. source not reading, sink/commit failures, or backpressure).  
-   - Optional: compare the last committed checkpoint ID to source progress (e.g. Kafka offsets at that checkpoint) to narrow down whether the gap is in the source, the job, or the sink/commit path.
+3. **Decide: Flink or CLD → Snowflake**  
+   **Query the Iceberg table as of that snapshot** (e.g. `SELECT ... FROM iceberg_table VERSION AS OF snapshot_id`).  
+   - If the missing data **is present** in Iceberg at that snapshot → the Flink job wrote it; **loss is in CLD to Snowflake**.  
+   - If the missing data **is not present** in Iceberg at that snapshot → **loss is in the Flink job** (e.g. source, job, or sink/commit never included that data).
 
 ## Changes
 - **IcebergCommitter** (Sink V2): After committing a batch, log `Committed offsets (checkpointIds): [...]` and extend the existing commit log line to include `snapshotId` (via `table.refresh()` + `table.snapshot(branch)`).
